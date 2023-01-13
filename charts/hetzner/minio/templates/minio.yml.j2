@@ -39,7 +39,7 @@ services:
       replicas: 1
       placement:
         constraints: 
-          - node.labels.hetzner_location == nbg1
+          - node.labels.hetzner_location == {{ hetzner_location }}
       labels:
         - "traefik.docker.network=traefik-public"
         # use virtual IP in docker swarm for load balancing so we don't get interruptions

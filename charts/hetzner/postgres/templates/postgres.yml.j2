@@ -27,7 +27,7 @@ services:
       
       placement:
         constraints:
-          - node.labels.hetzner_location == nbg1
+          - node.labels.hetzner_location == {{ hetzner_location }}
 
     networks:
       postgres_network:

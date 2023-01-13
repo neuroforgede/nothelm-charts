@@ -22,7 +22,7 @@ services:
         preferences:
           - spread: node.labels.host
         constraints:
-          - node.labels.hetzner_location == nbg1
+          - node.labels.hetzner_location == {{ hetzner_location }}
   
     configs:
       - source: redis_config
