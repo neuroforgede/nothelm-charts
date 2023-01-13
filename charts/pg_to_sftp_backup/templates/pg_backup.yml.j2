@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  pgdump:
+    image: neuroforgede/postgres_dump:{{ postgres_dump_version }}
+    command: sh -c "cd /home/user && exec bash pg_dump.sh"
+    networks:
+      - postgres_network
+    deploy:
+      restart_policy:
+        delay: {{ delay_between_backups }}
+      
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    environment:
+      POSTGRES_HOST: {{ postgres_host }}
+      POSTGRES_DB: {{ postgres_db }}
+      POSTGRES_USER: {{ postgres_user }}
+      POSTGRES_TARGET_SESSION_ATTRS: prefer-standby
+
+      SFTP_USER: {{ sftp_user }}
+      SFTP_TARGET: {{ sftp_target }}
+      SFTP_BASE_PATH: {{ sftp_base_path }}
+
+      KEEP_LAST_N_DUMPS: {{ keep_last_n_dumps }}
+    
+    secrets:
+      - source: postgres_pgdump_pgpassword
+        target: postgres_pgdump_pgpassword
+        uid: '1000'
+        gid: '1000'
+        mode: 0400
+
+      - source: storagebox_password
+        target: storagebox_password
+        uid: '1000'
+        gid: '1000'
+        mode: 0400
+      
+    configs:
+      - source: storagebox_knownhosts
+        target: /home/user/.ssh/known_hosts
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+    
+      - source: postgres_pg_dump_script
+        target: /home/user/pg_dump.sh
+        uid: "1000"
+        gid: "1000"
+        mode: 0500
+
+networks:
+  postgres_network:
+    name: "{{ postgres_network }}"
+    external: true
+
+secrets:
+  storagebox_password:
+    file: ./secrets/sshpassword
+  postgres_pgdump_pgpassword:
+    file: ./secrets/pgpassword
+
+configs:
+  storagebox_knownhosts:
+    file: ./configs/known_hosts
+
+  postgres_pg_dump_script:
+    file: ./configs/dump.sh

@@ -1,0 +1,3 @@
+#!/bin/bash
+
+exec docker-sdp stack deploy --with-registry-auth -c pg_backup.yml {{ stack_name }}
