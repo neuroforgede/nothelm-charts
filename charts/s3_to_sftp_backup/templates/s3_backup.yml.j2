@@ -1,0 +1,58 @@
+version: '3.8'
+
+x-s3-backup-common: &s3-backup-common
+  image: rclone/rclone:{{ rclone_version }}
+  entrypoint: "/bin/sh"
+  environment: {}
+  secrets:
+  - source: rclone_config_conf
+    target: rclone_config_conf
+  configs:
+    - source: storagebox_knownhosts
+      target: /known_hosts
+      uid: "0"
+      gid: "0"
+      mode: 0400
+{% if s3_network is defined %}
+  networks:
+    s3_network:
+{% endif %}
+  deploy:
+    mode: replicated
+    replicas: 1
+    restart_policy:
+      delay: {{ delay_between_backups }}
+    
+    resources:
+      limits:
+        cpus: "1"
+        memory: 512M
+      reservations:
+        cpus: "0.25"
+        memory: 256M
+
+services:
+
+{% for s3_bucket in s3_buckets %}
+  {{ s3_bucket.bucket_name }}:
+    <<: *s3-backup-common
+    command:
+      - -c
+      - |
+        exec rclone -v --config /var/run/secrets/rclone_config_conf copy s3:{{ s3_bucket.bucket_name }} sftp:/{{ s3_bucket.bucket_name }}
+{% endfor %}
+  
+{% if s3_network is defined %}
+networks:
+  s3_network:
+    name: "{{ s3_network }}"  
+    external: true
+{% endif %}
+
+secrets:
+  rclone_config_conf:
+    file: ./secrets/rclone_config.conf
+
+configs:
+  storagebox_knownhosts:
+    file: ./configs/known_hosts
