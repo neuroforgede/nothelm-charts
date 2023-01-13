@@ -1,0 +1,87 @@
+version: '3.8'
+
+
+# Settings and configurations that are common for all containers
+x-minio-common: &minio-common
+  image: minio/minio:{{ minio_version }}
+  entrypoint: "/bin/sh"
+  command:
+    - -c
+    - |
+      . /run/secrets/secret_environment_sh
+      exec /usr/bin/docker-entrypoint.sh server --console-address ":9001" /data{1...2}
+  environment:
+    MINIO_BROWSER_REDIRECT_URL: https://{{ minio_console_domain }}
+  secrets:
+    - source: secret_environment_sh
+      target: secret_environment_sh
+  healthcheck:
+    test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+    interval: 10s
+    timeout: 20s
+    retries: 3
+  
+
+services:
+  minio1:
+    <<: *minio-common
+    hostname: minio1
+    volumes:
+      - data1-1:/data1
+      - data1-2:/data2
+    networks:
+      traefik-public:
+      minio:
+        aliases:
+          - {{ minio_alias }}
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: 
+          - node.labels.hetzner_location == nbg1
+      labels:
+        - "traefik.docker.network=traefik-public"
+        # use virtual IP in docker swarm for load balancing so we don't get interruptions
+        # in services quality while doing an upgrade
+        - "traefik.docker.lbswarm=true"
+        
+        - "traefik.enable=true"
+        - "traefik.http.routers.{{ minio_stack_name }}-frontend.rule=Host(`{{ minio_domain }}`)"
+        - "traefik.http.routers.{{ minio_stack_name }}-frontend.entrypoints=http"
+        - "traefik.http.services.{{ minio_stack_name }}-frontend.loadbalancer.server.port=9000"
+        - "traefik.http.routers.{{ minio_stack_name }}-frontend.service={{ minio_stack_name }}-frontend"
+
+        - "traefik.http.routers.{{ minio_stack_name }}-console-frontend.rule=Host(`{{ minio_console_domain }}`)"
+        - "traefik.http.routers.{{ minio_stack_name }}-console-frontend.entrypoints=http"
+        - "traefik.http.services.{{ minio_stack_name }}-console-frontend.loadbalancer.server.port=9001"
+        - "traefik.http.routers.{{ minio_stack_name }}-console-frontend.service={{ minio_stack_name }}-console-frontend"
+
+        - "traefik.constraint-label=traefik-public"
+
+volumes:
+  data1-1:
+    driver: hetzner-volume
+    driver_opts:
+      size: '{{ minio_volume_size }}'
+      fstype: xfs
+  data1-2:
+    driver: hetzner-volume
+    driver_opts:
+      size: '{{ minio_volume_size }}'
+      fstype: xfs
+
+secrets:
+  secret_environment_sh:
+    file: ./secrets/secret_environment.sh
+
+networks:
+  traefik-public:
+    external: true
+  minio:
+    driver: overlay
+    name: "{{ minio_network }}"
+    attachable: true
+    driver_opts:
+      encrypted: ""
+      com.docker.network.driver.mtu: "1350"

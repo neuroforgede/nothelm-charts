@@ -1,0 +1,58 @@
+version: '3.8'
+
+
+services:
+  redis:
+    image: redis:7
+    command: "redis-server /config/redis.conf"
+    volumes:
+      - redis_data:/data
+    deploy:
+      # todo: healthcheck
+      update_config:
+        order: stop-first
+        parallelism: 1
+      rollback_config:
+        order: stop-first
+        parallelism: 1
+      mode: replicated
+      replicas: 1
+      
+      placement:
+        preferences:
+          - spread: node.labels.host
+        constraints:
+          - node.labels.hetzner_location == nbg1
+  
+    configs:
+      - source: redis_config
+        target: /config/redis.conf
+        uid: "999"
+        gid: "999"
+        mode: 0400
+
+    networks:
+      redis_network:
+        aliases:
+          - "{{ redis_alias }}"
+
+networks:
+  redis_network:
+    driver: overlay
+    name: "{{ redis_network_name }}"
+    attachable: true
+    driver_opts:
+      encrypted: ""
+      com.docker.network.driver.mtu: "1350"
+
+
+configs:
+  redis_config:
+    file: ./config/redis.conf
+
+volumes:
+  redis_data:
+    driver: hetzner-volume
+    driver_opts:
+      size: '{{ redis_volume_size }}'
+      fstype: ext4
