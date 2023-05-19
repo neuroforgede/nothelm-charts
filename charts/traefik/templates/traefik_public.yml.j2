@@ -9,7 +9,7 @@ services:
       - traefik-public
 
     healthcheck:
-      test: ["CMD", "wget", "--tries=1", "--spider", "--quiet", "http://localhost:8080/ping"]
+      test: ["CMD", "/bin/sh", "-c", "((wget --tries=1 --spider --quiet http://localhost:80 --header 'Host: {{ traefik_domain }}' || true) 2>&1 | grep 401 >/dev/null && echo 'success') || exit 1"]
       interval: 10s
       timeout: 10s
       retries: 2
