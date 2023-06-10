@@ -16,6 +16,11 @@ Built with Hetzner in mind, but will work in other deployments as well.
 2. Hetzner Docker Volumes via costela/docker-volume-hetzner (see https://github.com/neuroforgede/swarmsible/tree/master/environments/test/test-swarm/stacks for a stack to install the driver)
 3. davideshay/dockerautolabel to mark the docker swarm node that is running bookstack so that the data volume backup trigger container can be co-located on the same node as the bookstack container
 
+## Installation of Pre-requisites
+
+0. Install docker-stack-deploy
+1. Install nothelm.py
+
 ## How to use (with Hetzner)
 
 Setup a values.yaml file
