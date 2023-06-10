@@ -18,7 +18,7 @@ services:
       replicas: 1
       placement:
         constraints:
-          - node.labels.hetzner_location == nbg1
+          {{ bookstack_mysql_placement_constraints | default([]) }}
 
   dockerautolabel:
     image: davideshay/dockerautolabel:latest
@@ -221,7 +221,7 @@ services:
       replicas: 1
       placement:
         constraints: 
-          - node.labels.hetzner_location == nbg1
+          {{ bookstack_app_placement_constraints | default([]) }}
       
       labels:
         - "traefik.docker.network=traefik-public"
@@ -250,20 +250,11 @@ networks:
 
 volumes:
   mysql_data:
-    driver: hetzner-volume
-    driver_opts:
-      size: '25'
-      fstype: ext4
+    {{ bookstack_mysql_volume_config | default({}) }}
   uploads:
-    driver: hetzner-volume
-    driver_opts:
-      size: '10'
-      fstype: ext4
+    {{ bookstack_uploads_volume_config | default({}) }}
   storage_uploads:
-    driver: hetzner-volume
-    driver_opts:
-      size: '25'
-      fstype: ext4
+    {{ bookstack_storage_uploads_volume_config | default({}) }}
 
 secrets:
   storagebox_bookstack_storage_password: 
