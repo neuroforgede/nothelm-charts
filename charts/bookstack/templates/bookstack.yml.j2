@@ -1,0 +1,293 @@
+version: '3.8'
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD={{ bookstack_mysql_password }}
+      - MYSQL_DATABASE=bookstack
+      - MYSQL_USER=bookstack
+      - MYSQL_PASSWORD={{ bookstack_mysql_password }}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      bookstack_network:
+        aliases:
+          - mysql.local
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.labels.hetzner_location == nbg1
+
+  dockerautolabel:
+    image: davideshay/dockerautolabel:latest
+    configs:
+      - source: autolabel
+        target: /config/servicelist.txt
+        uid: "1000"
+        gid: "1000"
+        mode: 0644
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    deploy:
+        placement:
+            constraints:
+              - node.role==manager
+
+  mysql_backup:
+    image: neuroforgede/mysql_dump:8.0
+    command: sh -c "cd /home/user && exec bash mysql_dump.sh"
+    deploy:
+      restart_policy:
+        # hourly
+        delay: 3600s
+      
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+    environment:
+      MYSQL_HOST: mysql.local
+      MYSQL_DB: bookstack
+      MYSQL_USER: bookstack
+
+      SFTP_USER: {{ bookstack_backup_mysql_sftp_user }}
+      SFTP_TARGET: {{ bookstack_backup_mysql_sftp_target }}
+      SFTP_BASE_PATH: {{ bookstack_backup_mysql_sftp_base_path | default('/mysql') }}
+
+      # 336 hours = last 2 weeks
+      KEEP_LAST_N_DUMPS: 336
+    
+    secrets:
+      - source: storagebox_mysql_dump_password
+        target: storagebox_password
+        uid: '1000'
+        gid: '1000'
+        mode: 0400
+
+      - source: mysql_mysqldump_mysqlpassword
+        target: mysql_mysqldump_mysqlpassword
+        uid: '1000'
+        gid: '1000'
+        mode: 0400
+
+    configs:
+      - source: storagebox_knownhosts
+        target: /home/user/.ssh/known_hosts
+        uid: "1000"
+        gid: "1000"
+        mode: 0400
+    
+      - source: mysql_mysqldump_script
+        target: /home/user/mysql_dump.sh
+        uid: "1000"
+        gid: "1000"
+        mode: 0500
+
+    networks:
+      - bookstack_network
+
+  bookstack_storage_backup:
+    image: docker
+    entrypoint: "/bin/sh"
+    command: 
+      - /trigger_bookstack_backup.sh
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    configs:
+      - source: trigger_bookstack_backup
+        target: /trigger_bookstack_backup.sh
+        uid: "1000"
+        gid: "1000"
+        mode: 0755
+    deploy:
+      mode: replicated
+      replicas: 1
+      restart_policy:
+        # hourly
+        delay: 3600s
+      
+      resources:
+        limits:
+          cpus: "1"
+          memory: 1024M
+        reservations:
+          cpus: "0.25"
+          memory: 256M
+          
+      placement:
+        constraints: 
+          - node.labels.running_bookstack_bookstack == 1
+
+  bookstack:
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        chown -R www-data:www-data /var/www/bookstack/public/uploads
+        chown -R www-data:www-data /var/www/bookstack/storage/uploads
+        exec /bin/docker-entrypoint.sh
+    image: {{ bookstack_docker_image | default('ghcr.io/neuroforgede/docker-bookstack:23.02.2') }}
+    user: root
+    environment:
+      - DB_HOST=mysql:3306
+      - DB_DATABASE=bookstack
+      - DB_USERNAME=bookstack
+      - DB_PASSWORD={{ bookstack_mysql_password }}
+      - CACHE_DRIVER=database
+      - SESSION_DRIVER=database
+      - SESSION_SECURE_COOKIE=true
+      - SESSION_LIFETIME=360
+      # set the APP_ to the URL of bookstack without without a trailing slash APP_URL=https://example.com
+      - APP_URL=https://{{ bookstack_domain }}
+      - APP_PROXIES=10.0.0.0/8
+      # enable password protected images
+      - STORAGE_TYPE=local_secure_restricted
+
+      - AUTH_METHOD=oidc
+      - AUTH_AUTO_INITIATE=false
+
+      # this follows https://www.youtube.com/watch?v=CL5kMFkopHY
+      - OIDC_NAME="Single Sign On"
+      - OIDC_DISPLAY_NAME_CLAIMS=name
+      - OIDC_CLIENT_ID={{ bookstack_oidc_client_id }}
+      - OIDC_CLIENT_SECRET={{ bookstack_oidc_client_secret }}
+      - OIDC_ISSUER={{ bookstack_oidc_issuer }}
+      - OIDC_ISSUER_DISCOVER=true
+      # Enable OIDC group sync.
+      - OIDC_USER_TO_GROUPS=true
+      - OIDC_DUMP_USER_DETAILS=false
+
+      # Set the attribute from which BookStack will read groups names from.
+      - OIDC_GROUPS_CLAIM=groups
+
+      # Additional scopes to send with the authentication request.
+      # By default BookStack only sends the 'openid', 'profile' & 'email' scopes.
+      # Many platforms require specific scopes to be requested for group data.
+      # Multiple scopes can be added via comma separation.
+      # - OIDC_ADDITIONAL_SCOPES=groups
+
+      # Remove the user from roles that don't match OIDC groups upon login.
+      # Note: While this is enabled the "Default Registration Role", editable within the 
+      # BookStack settings view, will be considered a matched role and assigned to the user.
+      - OIDC_REMOVE_FROM_GROUPS=true
+
+      - DRAWIO=https://embed.diagrams.net/?embed=1&proto=json&spin=1&stealth=1
+
+      - BACKUP_SFTP_USER={{ bookstack_backup_storage_sftp_user }}
+      - BACKUP_SFTP_TARGET={{ bookstack_backup_storage_sftp_target }}
+      - BACKUP_SFTP_BASE_PATH={{ bookstack_backup_storage_sftp_base_path | default('/storage') }}
+
+      - FILE_UPLOAD_SIZE_LIMIT=100
+
+      - ALLOWED_IFRAME_SOURCES="https://*.draw.io https://*.youtube.com https://*.youtube-nocookie.com https://*.vimeo.com https://*.figma.com"
+
+      # 336 hours = last 2 weeks
+      - BACKUP_KEEP_LAST_N_DUMPS=336
+    volumes: 
+     - uploads:/var/www/bookstack/public/uploads
+     - storage_uploads:/var/www/bookstack/storage/uploads
+    networks:
+      - bookstack_network
+      - traefik-public
+    configs:
+      - source: php_ini
+        target: /usr/local/etc/php/php.ini
+        uid: "0"
+        gid: "0"
+        mode: 0664
+      - source: bookstack_backup
+        target: /bookstack_backup.sh
+        uid: "1000"
+        gid: "1000"
+        mode: 0755
+      - source: storagebox_knownhosts
+        target: /root/.ssh/known_hosts
+        uid: "0"
+        gid: "0"
+        mode: 0400
+    secrets:
+      - source: storagebox_bookstack_storage_password
+        target: storagebox_password
+        uid: '33'
+        gid: '33'
+        mode: 0400
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: 
+          - node.labels.hetzner_location == nbg1
+      
+      labels:
+        - "traefik.docker.network=traefik-public"
+
+        - "traefik.enable=true"
+        - "traefik.http.routers.bookstack-frontend.rule=Host(`{{ bookstack_domain }}`)"
+        - "traefik.http.routers.bookstack-frontend.entrypoints=http"
+        - "traefik.http.services.bookstack-frontend.loadbalancer.server.port=8080"
+        - "traefik.http.routers.bookstack-frontend.service=bookstack-frontend"
+
+        - "traefik.http.routers.bookstack-frontend.middlewares=bookstack-headers"
+        - "traefik.http.middlewares.bookstack-headers.headers.customrequestheaders.X-Real-IP="
+
+        - "traefik.constraint-label=traefik-public"
+
+networks:
+  bookstack_network:
+    driver: overlay
+    attachable: true
+    driver_opts:
+      encrypted: ""
+      com.docker.network.driver.mtu: "1350"
+  traefik-public:
+    external: true
+
+
+volumes:
+  mysql_data:
+    driver: hetzner-volume
+    driver_opts:
+      size: '25'
+      fstype: ext4
+  uploads:
+    driver: hetzner-volume
+    driver_opts:
+      size: '10'
+      fstype: ext4
+  storage_uploads:
+    driver: hetzner-volume
+    driver_opts:
+      size: '25'
+      fstype: ext4
+
+secrets:
+  storagebox_bookstack_storage_password: 
+    file: ./secrets/bookstack_storage_backup/sshpassword
+  storagebox_mysql_dump_password:
+    file: ./secrets/mysql_dump/sshpassword
+  mysql_mysqldump_mysqlpassword:
+    file: ./secrets/mysql_dump/mysqlpassword
+
+configs:
+  storagebox_knownhosts:
+    file: ./configs/known_hosts
+
+  mysql_mysqldump_script:
+    file: ./configs/mysql_dump.sh
+
+  autolabel:
+    file: ./configs/autolabel
+
+  trigger_bookstack_backup:
+    file: ./configs/trigger_bookstack_backup.sh
+
+  bookstack_backup:
+    file: ./configs/bookstack_backup.sh
+
+  php_ini:
+    file: ./configs/php.ini
