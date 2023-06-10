@@ -8,7 +8,7 @@ Current version is hardcoded for support with Hetzner and Hetzner volumes.
 
 - Automatic Backup to Hetzner Storage Boxes
 - Uses Hetzner Volumes
-- OIDC support
+- OIDC support according to [this video](https://www.youtube.com/watch?v=CL5kMFkopHY)
 
 ## Used software
 
