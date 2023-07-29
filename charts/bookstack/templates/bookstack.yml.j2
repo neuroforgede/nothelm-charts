@@ -131,7 +131,7 @@ services:
         chown -R www-data:www-data /var/www/bookstack/public/uploads
         chown -R www-data:www-data /var/www/bookstack/storage/uploads
         exec /bin/docker-entrypoint.sh
-    image: {{ bookstack_docker_image | default('ghcr.io/neuroforgede/docker-bookstack:23.02.2') }}
+    image: {{ bookstack_docker_image | default('ghcr.io/neuroforgede/docker-bookstack:23.06.2') }}
     user: root
     environment:
       - DB_HOST=mysql:3306
@@ -144,6 +144,7 @@ services:
       - SESSION_LIFETIME=360
       # set the APP_ to the URL of bookstack without without a trailing slash APP_URL=https://example.com
       - APP_URL=https://{{ bookstack_domain }}
+      - APP_KEY="{{ bookstack_app_key }}"
       - APP_PROXIES=10.0.0.0/8
       # enable password protected images
       - STORAGE_TYPE=local_secure_restricted
